@@ -17,47 +17,6 @@ type Group struct {
 	Attributes  map[string][]string `json:"attributes"`
 }
 
-/*
- * There is no way to get a subgroup's parent ID using the Keycloak API (that I know of, PRs are welcome)
- * The best we can do is use the group's path to figure out what its parents' names are and iterate over all subgroups
- * until we find it.
- */
-func (keycloakClient *KeycloakClient) groupParentId(group *Group) (string, error) {
-	// Check the path of the group being passed in.
-	// If there is only one group in the path, then this is a top-level group with no parentId
-	parts := strings.Split(strings.TrimPrefix(group.Path, "/"), "/")
-
-	if len(parts) == 1 {
-		return "", nil
-	}
-
-	groups, err := keycloakClient.ListGroupsWithName(group.RealmId, group.Name)
-	if err != nil {
-		return "", err
-	}
-
-	currentGroups := &groups
-
-	for index, groupName := range parts {
-		for _, group := range *currentGroups {
-			if group.Name == groupName {
-				// if we're on the second to last index for the path, then this group must contain the passed in group as a child
-				// thus, this group is the parent
-				if index == len(parts)-2 {
-					return group.Id, nil
-				}
-
-				currentGroups = &(group.SubGroups)
-
-				break
-			}
-		}
-	}
-
-	// maybe panic here?  this should never happen
-	return "", fmt.Errorf("unable to determine parent ID for group with path %s", group.Path)
-}
-
 func (keycloakClient *KeycloakClient) ValidateGroupMembers(usernames []interface{}) error {
 	for _, username := range usernames {
 		if username.(string) != strings.ToLower(username.(string)) {
@@ -116,13 +75,6 @@ func (keycloakClient *KeycloakClient) GetGroup(realmId, id string) (*Group, erro
 
 	group.RealmId = realmId // it's important to set RealmId here because fetching the ParentId depends on it
 
-	parentId, err := keycloakClient.groupParentId(&group)
-	if err != nil {
-		return nil, err
-	}
-
-	group.ParentId = parentId
-
 	return &group, nil
 }
 
@@ -148,13 +100,6 @@ func (keycloakClient *KeycloakClient) GetGroupByName(realmId, name string) (*Gro
 		if group.Name == name {
 
 			group.RealmId = realmId // it's important to set RealmId here because fetching the ParentId depends on it
-
-			parentId, err := keycloakClient.groupParentId(&group)
-			if err != nil {
-				return nil, err
-			}
-
-			group.ParentId = parentId
 
 			return &group, nil
 		}
